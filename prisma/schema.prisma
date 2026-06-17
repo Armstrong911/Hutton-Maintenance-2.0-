@@ -1,0 +1,158 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users ───────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String?
+  isSuperAdmin  Boolean   @default(false)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  buildingRoles BuildingUser[]
+  maintenanceCreated MaintenanceRecord[] @relation("CreatedBy")
+  auditLogs     AuditLog[]
+  sessions      Session[]
+  accounts      Account[]
+}
+
+// ─── NextAuth models ──────────────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  @@unique([identifier, token])
+}
+
+// ─── Buildings ───────────────────────────────────────────────────────────────
+
+model Building {
+  id           String   @id @default(cuid())
+  name         String
+  strataPlan   String   // e.g. BCS1234
+  address      String
+  city         String   @default("Victoria")
+  province     String   @default("BC")
+  postalCode   String?
+  notes        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users        BuildingUser[]
+  maintenance  MaintenanceRecord[]
+  auditLogs    AuditLog[]
+}
+
+// Role scoped to a building
+enum BuildingRole {
+  ADMINISTRATION
+  COUNCIL
+  OWNER
+}
+
+model BuildingUser {
+  id         String       @id @default(cuid())
+  userId     String
+  buildingId String
+  role       BuildingRole
+  createdAt  DateTime     @default(now())
+
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  building   Building     @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, buildingId])
+}
+
+// ─── Maintenance Records ──────────────────────────────────────────────────────
+
+enum MaintenanceStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model MaintenanceRecord {
+  id             String            @id @default(cuid())
+  buildingId     String
+  contractorName String
+  description    String
+  workDate       DateTime
+  price          Decimal           @db.Decimal(10, 2)
+  status         MaintenanceStatus @default(COMPLETED)
+  invoiceNumber  String?
+  notes          String?
+  attachments    Attachment[]
+  createdById    String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  building       Building          @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  createdBy      User?             @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model Attachment {
+  id          String   @id @default(cuid())
+  recordId    String
+  filename    String
+  url         String
+  size        Int
+  mimeType    String
+  createdAt   DateTime @default(now())
+
+  record      MaintenanceRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+}
+
+// ─── Audit Log ───────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String    @id @default(cuid())
+  userId     String?
+  buildingId String?
+  action     String
+  entityType String
+  entityId   String?
+  details    String?
+  ipAddress  String?
+  createdAt  DateTime  @default(now())
+
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  building   Building? @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+}
